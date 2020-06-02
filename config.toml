@@ -1,4 +1,4 @@
-baseurl                  = "/"           # Your domain name
+baseurl                  = "https://dilettante-blog.netlify.app/"           # Your domain name
 languageCode             = "ru-ru"
 defaultContentLanguage   = "ru"
 isMultilingual           = false
