@@ -1,0 +1,33 @@
+baseurl                  = "/"           # Your domain name
+languageCode             = "ru-ru"
+defaultContentLanguage   = "ru"
+isMultilingual           = false
+title                    = "Дилетантская аналитика"
+theme                    = "hugo-theme-sam"
+pygmentsStyle            = "monokai"                        # https://help.farbox.com/pygments.html
+pygmentsCodefences       = true
+ignoreFiles              = ["\\.Rmd$", "\\.Rmarkdown$", "_files$", "_cache$"]
+# googleAnalytics        = ""                               # Tracking code, eg. "UA-111111111-1"
+
+[params]
+    author               = "Дмитрий Володин"
+    dateform             = "2006-01-02"
+    dateformfull         = "2006-01-02 15:04:05"
+    homepage             = "Главная"                           # What to call the home page link
+
+# Metadata for Open Graph and Twitter
+    description          = "Аналитический блог"               # Max 160 characters show in search results
+    images               = ["tn.png"]                       # Image that shows on Twitter cards and Open Graph links to the site
+    title                = "Дилетантская аналитика"
+    # rss                = ""
+
+[[params.mainMenu]]
+    link = "post"
+    text = "блог"
+
+[[params.mainMenu]]
+    link = "about"
+    text = "дилетантская?"
+
+[imaging]
+    quality = 75

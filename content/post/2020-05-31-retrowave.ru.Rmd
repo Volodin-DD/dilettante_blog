@@ -1,0 +1,228 @@
+---
+title: Цвет и музыка.
+author: Дмитрий Володин
+date: '2020-05-31'
+slug: retrowave
+categories:
+  - R
+  - visualization
+tags:
+  - ML
+  - kmeans
+  - retrowave
+showDate: no
+---
+
+# Вступление
+
+Иногда такое случается: надоедают встроенные палитры ggplot.
+Можно, конечно, найти кучу палитр на люббой вкус в интернете. Но аналитик я или нет, подумал я как-то. И решил сам себе сделать палитру.
+
+Шаги кратко:
+ - Нам нужна картинка, из которой будем делать палитру.
+ - Из картинки надо вытащить цвета в числовом формате по каналам (RGB)
+ - Выделить основные цвета.
+ - Преобразовать в hex-формат.
+ - Использовать.
+ 
+## Чем пользуемся?
+ 
+Для превращения картинки в числовую матрицу по каналам будем пользоваться пакетом imager.
+Для манипуляций с таблицами и графиками - tidyverse.
+Кластеризовать цвета буду стандартной функцией kmeans из базового пакета stats.
+ 
+```{r libraires, message=FALSE, warning=FALSE}
+library(imager)
+library(tidyverse)
+```
+ 
+## Что за картинка?
+ 
+Последний год я очень увлёкся retrowave музыкой. Всё направление в искусстве заслуживает отдельных огромных текстов, но мой пост не про это. Короче говоря, в качестве картинки будем использовать обложку альбома Monochrome американского музыканта Scandroid.
+ 
+![Monochrome-Scandroid](/post/2020-05-31-retrowave.ru_files/1e1d61c41a7a31ec6ddd1e0a867848ab.1000x1000x1.jpg)
+
+Загружаем её стандартным для пакета imager способом и превращаем в датафрейм:
+
+```{r image_load, message=FALSE, warning=FALSE}
+image <- load.image(
+  "~/Pictures/1e1d61c41a7a31ec6ddd1e0a867848ab.1000x1000x1.jpg"
+)
+
+image_df <- data.frame(
+  R = as.vector(R(image)),
+  G = as.vector(G(image)),
+  B = as.vector(B(image))
+)
+
+image_df <- distinct(image_df)
+
+knitr::kable(head(image_df))
+```
+
+**load.image** загружает картинку в стандартных графических форматах в глобальное окружение в виде набора (по количеству каналов) двумерных матриц с размерностями равными размерам картинки в пикселах.
+
+То есть у меня есть числовые данные из картинки по цвету каждого пиксела. Фунцкциями **R, G, B** достанем эти матрицы и развернём их в одномерный вектор. Мне нужен только цвет, координаты оставим для задач computer vision.
+
+Функцией **distinct** оставим в датафрейме только уникальные цвета, пусть даже они и различаются на 1/255 по одному каналу.
+
+## Предварительная обработка
+
+Невооружённым глазом видно, что на картинки довольно много областей в чёрно-белых тонах. Я хлчу от них избавиться, потому что использовать их в качестве выделения каких-то переменных на графиках мне не нравится. Как же от них избавиться.
+
+Признаюсь, я ничего не гуглил, а решил сделать как знаю. Фактически у меня есть таблица с координатами точек в кубе с длиной ребра 1. Главная диагональ этого куба - координаты "истинно" серых цветов. Но, к примеру, точка с координатами (51/255, 50/255, 50/255) не лежит на главной диагонали, при этом для человеческого глаза отличить цвет с такими координатами от серого невозможно. В связи с этим задачу можно сформулировать так: исключить из датафрейма с координатами цветов такие значение, которые находятся в некоторой близости от главной диагонали. Будем решать это через расстояние от точки до прямой, написав для этого функцию. В школьную математику вдаваться не будем.
+
+```{r dist_function, message=FALSE, warning=FALSE}
+vec_distance <- function(a, b) {
+  cosa <- sum(a * b) / (sqrt(sum(a ^ 2)) * sqrt(sum(b ^ 2)))
+  sina <- 1 - cosa ^ 2
+  return(sqrt(sum(a)) * sina)
+}
+
+col_var <- apply(image_df, 1, function(x) {
+  vec_distance(c(x[1], x[2], x[3]), c(1, 1, 1))
+})
+
+q <- 0.15
+
+image_df_trimmed <- image_df[
+  which(col_var >= quantile(col_var, probs = seq(0, 1, q))[paste0(q * 100, "%")]),
+]
+```
+
+Применив свеженаписанную функцию **vec_distance** на наш датафрейм (вернее на каждую строчку), мы получим вектор расстояний каждой цвето-точки до главной диагонали. Чтобы уж совсем было применимо для любой картинки, удалим из q процентов самых близких к главной диагонали точек. q можно менять (я выбрал 15% методом тыка).
+
+## Кластеризация цветов
+
+Можно было бы просто выбрать количество цветов-кластеров на глаз, но это скучный подход. И не очень масштабируемый для других картинок. Да и *метод локтя* сам по себе интересен и может дать мне какую-то информацию о цветовой гамме выбранной картинки.
+
+Поэтому проитерируем стандартную функцию к-средних по количеству центроидов от 1 до 15 (можно выбрать и больше), вытащим из каждой итерации однородность каждой группы и посмотрим, какое количество кластеров будет оптимальным для моего варианта.
+
+```{r btwns, message=FALSE, warning=FALSE}
+k_max <- 15
+
+btwns <- sapply(1:k_max, function(k) {
+  kmeans(image_df_trimmed, k)$betweenss
+})
+
+btwns
+
+plot(1:k_max, btwns,
+     type="b",
+     xlab="Количество кластеров",
+     ylab="Внутригрупповая однородность")
+```
+
+В районе 6 кластеров однородность прирастает уже не сильно и на 6 можно останавливаться. Далее остаётся поработать только с цветами-центроидами.
+
+
+## Палитра
+
+```{r palette_df, message=FALSE, warning=FALSE}
+k_opt <- 6
+
+cluster <- kmeans(image_df_trimmed, k_opt)
+
+palette_df <- data.frame(
+  x = apply(cluster$centers, 1, function(x) {
+    rgb(x[1], x[2], x[3])
+  }),
+  y = 100,
+  col = apply(cluster$centers, 1, function(x) {
+    rgb(x[1], x[2], x[3])
+  })
+)
+```
+
+Применив функцию **kmeans** на обработанный цветовой датафрейм, я получил много полезных данных. Но меня интересуют только координаты тех самых 6 центроидов, то есть самых усреднённых цветов предобработанной картинки. Они записаны в виде матрицы в результате выполнения функции. **cluster$centers**. Эти координаты я преобразую построчно в hexформат функцией rgb, добавлю dummy-переменную y для графика и ещё одну цветовую переменную для окрашивания колонок. Но для начала я хотел бы расположить цвета в порядке их взаимной удалённости. То есть цвет, который дальше других расположен от всех остальных цветов в палитре должен идти первым. Да у нас же классическая задача коммивояжёра! Сразу скажу, что так её решать не надо, тем более в R. Мне не хватило знаний и решить её иначе, но на 6 точках можно и таким способом сделать.
+
+```{r dist_mat, message=FALSE, warning=FALSE}
+dot_distance <- function(a, b) {
+  return(sqrt(sum((a - b) ^ 2)))
+}
+
+dist_matrix <- function(cluster_centers, k, col_df) {
+  df <- data.frame(
+    col = col_df$col
+  )
+  temp <- list()
+  length(temp) <- k
+  for (i in 1:k) {
+    temp[[i]] <- apply(cluster_centers, 1, function(x) {
+      dot_distance(cluster_centers[i, ], x)
+    })
+  }
+  temp <- do.call(rbind, temp)
+  colnames(temp) <- df$col
+  df <- cbind(df, temp)
+  return(df)
+}
+
+dist <- dist_matrix(cluster$centers, k_opt, palette_df)
+
+knitr::kable(head(dist))
+
+dist <- dist %>% 
+  pivot_longer(cols = -col, names_to = "second_col", values_to = "dist") %>% 
+  arrange(-dist) %>% select(col) %>% distinct()
+
+dist <- dist[, 1, drop = TRUE]
+
+palette_df$x <- factor(palette_df$x, levels = dist, ordered = TRUE)
+palette_df <- arrange(palette_df, desc(x))
+```
+
+По порядку, что сделано:
+
+Пишу короткую функцию расстояния между точками в n-мерном евклидовом пространстве.
+
+Далее использую её для функции, которая будет выводить матрицу расстояний между всеми возмоными точками (похожа на корелляционную матрицу). Применяю эту функцию на датафрейм-палитру.
+
+Далее "вытягиваю" получившийся датафрейм, чтобы получилось три столбца: цвет 1, цвет 2, расстояние между ними. Сортирую в порядке убывания расстояния и удаляю дубликаты. Колонку с цветом 1 превращаю в вектор, который буду использовать в качестве уровней упорядоченного фактора, в который превращу первую колонку (цветовую) в датафрейме-палитре.
+
+```{r palette, message=FALSE, warning=FALSE}
+ggplot(palette_df, aes(x = x, y = y, fill = col))+
+  geom_col()+
+  scale_fill_identity()+
+  coord_flip()+
+  theme(axis.title = element_blank(),
+        panel.background = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        plot.background = element_blank())
+```
+
+## Заключение и применение
+
+Полученную палитру хочется сразу применить. И лучше всего это сделать на самых "модных" данных весны-лета 2020 - данных по распространению COVID-19. Заодно видно, как в tidyverse можно писать гигантские однострочники без необходимости создания промежуточных переменных.
+
+```{r final, message=FALSE, warning=FALSE}
+coronavirus_df <- read.csv(
+  "https://raw.githubusercontent.com/RamiKrispin/coronavirus/master/csv/coronavirus.csv"
+)
+
+coronavirus_df %>% mutate(date = as.Date(date)) %>% 
+  group_by(date, type, country) %>% 
+  summarise(cases = sum(cases)) %>% ungroup() %>% 
+  group_by(type, country) %>% mutate(cases = cumsum(cases)) %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = type, values_from = cases) %>% 
+  mutate(active = confirmed - death - recovered) %>% 
+  pivot_longer(cols = confirmed:active, names_to = "type", values_to = "cases") %>% 
+  group_by(date, type) %>% mutate(total_cases = sum(cases)) %>% ungroup() %>% 
+  filter(country == "Russia", date >= as.Date("2020-03-01")) %>% 
+  ggplot(aes(x = date, y = cases, fill = type))+
+  geom_area(alpha = 0.8)+
+  facet_wrap(. ~ type, ncol = 1, scales = "free")+
+  scale_fill_manual(values = palette_df$col[1:4])+
+  theme_bw()+
+  labs(title = "Данные по зарегистрированным случаям COVID-19 в РФ.",
+       caption = "Источник - https://raw.githubusercontent.com/RamiKrispin/coronavirus/master/csv/coronavirus.csv",
+       x = "Дата", y = "Зарегистрировано случаев")+
+  scale_y_continuous(labels = scales::number_format())+
+  theme(strip.background = element_rect(fill = palette_df$col[5]),
+        strip.text = element_text(size = 10, colour = "white"),
+        legend.position = "none",
+        plot.background = element_blank())
+```
+

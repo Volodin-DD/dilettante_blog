@@ -1,0 +1,308 @@
+---
+title: Цвет и музыка.
+author: Дмитрий Володин
+date: '2020-05-31'
+slug: retrowave
+categories:
+  - R
+  - visualization
+tags:
+  - ML
+  - kmeans
+  - retrowave
+showDate: no
+---
+
+
+
+<div id="вступление" class="section level1">
+<h1>Вступление</h1>
+<p>Иногда такое случается: надоедают встроенные палитры ggplot.
+Можно, конечно, найти кучу палитр на люббой вкус в интернете. Но аналитик я или нет, подумал я как-то. И решил сам себе сделать палитру.</p>
+<p>Шаги кратко:
+- Нам нужна картинка, из которой будем делать палитру.
+- Из картинки надо вытащить цвета в числовом формате по каналам (RGB)
+- Выделить основные цвета.
+- Преобразовать в hex-формат.
+- Использовать.</p>
+<div id="чем-пользуемся" class="section level2">
+<h2>Чем пользуемся?</h2>
+<p>Для превращения картинки в числовую матрицу по каналам будем пользоваться пакетом imager.
+Для манипуляций с таблицами и графиками - tidyverse.
+Кластеризовать цвета буду стандартной функцией kmeans из базового пакета stats.</p>
+<pre class="r"><code>library(imager)
+library(tidyverse)</code></pre>
+</div>
+<div id="что-за-картинка" class="section level2">
+<h2>Что за картинка?</h2>
+<p>Последний год я очень увлёкся retrowave музыкой. Всё направление в искусстве заслуживает отдельных огромных текстов, но мой пост не про это. Короче говоря, в качестве картинки будем использовать обложку альбома Monochrome американского музыканта Scandroid.</p>
+<div class="figure">
+<img src="/post/2020-05-31-retrowave.ru_files/1e1d61c41a7a31ec6ddd1e0a867848ab.1000x1000x1.jpg" alt="" />
+<p class="caption">Monochrome-Scandroid</p>
+</div>
+<p>Загружаем её стандартным для пакета imager способом и превращаем в датафрейм:</p>
+<pre class="r"><code>image &lt;- load.image(
+  &quot;~/Pictures/1e1d61c41a7a31ec6ddd1e0a867848ab.1000x1000x1.jpg&quot;
+)
+
+image_df &lt;- data.frame(
+  R = as.vector(R(image)),
+  G = as.vector(G(image)),
+  B = as.vector(B(image))
+)
+
+image_df &lt;- distinct(image_df)
+
+knitr::kable(head(image_df))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="right">R</th>
+<th align="right">G</th>
+<th align="right">B</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">0.1647059</td>
+<td align="right">0.0784314</td>
+<td align="right">0.2705882</td>
+</tr>
+<tr class="even">
+<td align="right">0.1725490</td>
+<td align="right">0.0862745</td>
+<td align="right">0.2784314</td>
+</tr>
+<tr class="odd">
+<td align="right">0.2509804</td>
+<td align="right">0.1647059</td>
+<td align="right">0.3568627</td>
+</tr>
+<tr class="even">
+<td align="right">0.3372549</td>
+<td align="right">0.2509804</td>
+<td align="right">0.4431373</td>
+</tr>
+<tr class="odd">
+<td align="right">0.3019608</td>
+<td align="right">0.2117647</td>
+<td align="right">0.4156863</td>
+</tr>
+<tr class="even">
+<td align="right">0.1960784</td>
+<td align="right">0.1058824</td>
+<td align="right">0.3098039</td>
+</tr>
+</tbody>
+</table>
+<p><strong>load.image</strong> загружает картинку в стандартных графических форматах в глобальное окружение в виде набора (по количеству каналов) двумерных матриц с размерностями равными размерам картинки в пикселах.</p>
+<p>То есть у меня есть числовые данные из картинки по цвету каждого пиксела. Фунцкциями <strong>R, G, B</strong> достанем эти матрицы и развернём их в одномерный вектор. Мне нужен только цвет, координаты оставим для задач computer vision.</p>
+<p>Функцией <strong>distinct</strong> оставим в датафрейме только уникальные цвета, пусть даже они и различаются на 1/255 по одному каналу.</p>
+</div>
+<div id="предварительная-обработка" class="section level2">
+<h2>Предварительная обработка</h2>
+<p>Невооружённым глазом видно, что на картинки довольно много областей в чёрно-белых тонах. Я хлчу от них избавиться, потому что использовать их в качестве выделения каких-то переменных на графиках мне не нравится. Как же от них избавиться.</p>
+<p>Признаюсь, я ничего не гуглил, а решил сделать как знаю. Фактически у меня есть таблица с координатами точек в кубе с длиной ребра 1. Главная диагональ этого куба - координаты “истинно” серых цветов. Но, к примеру, точка с координатами (51/255, 50/255, 50/255) не лежит на главной диагонали, при этом для человеческого глаза отличить цвет с такими координатами от серого невозможно. В связи с этим задачу можно сформулировать так: исключить из датафрейма с координатами цветов такие значение, которые находятся в некоторой близости от главной диагонали. Будем решать это через расстояние от точки до прямой, написав для этого функцию. В школьную математику вдаваться не будем.</p>
+<pre class="r"><code>vec_distance &lt;- function(a, b) {
+  cosa &lt;- sum(a * b) / (sqrt(sum(a ^ 2)) * sqrt(sum(b ^ 2)))
+  sina &lt;- 1 - cosa ^ 2
+  return(sqrt(sum(a)) * sina)
+}
+
+col_var &lt;- apply(image_df, 1, function(x) {
+  vec_distance(c(x[1], x[2], x[3]), c(1, 1, 1))
+})
+
+q &lt;- 0.15
+
+image_df_trimmed &lt;- image_df[
+  which(col_var &gt;= quantile(col_var, probs = seq(0, 1, q))[paste0(q * 100, &quot;%&quot;)]),
+]</code></pre>
+<p>Применив свеженаписанную функцию <strong>vec_distance</strong> на наш датафрейм (вернее на каждую строчку), мы получим вектор расстояний каждой цвето-точки до главной диагонали. Чтобы уж совсем было применимо для любой картинки, удалим из q процентов самых близких к главной диагонали точек. q можно менять (я выбрал 15% методом тыка).</p>
+</div>
+<div id="кластеризация-цветов" class="section level2">
+<h2>Кластеризация цветов</h2>
+<p>Можно было бы просто выбрать количество цветов-кластеров на глаз, но это скучный подход. И не очень масштабируемый для других картинок. Да и <em>метод локтя</em> сам по себе интересен и может дать мне какую-то информацию о цветовой гамме выбранной картинки.</p>
+<p>Поэтому проитерируем стандартную функцию к-средних по количеству центроидов от 1 до 15 (можно выбрать и больше), вытащим из каждой итерации однородность каждой группы и посмотрим, какое количество кластеров будет оптимальным для моего варианта.</p>
+<pre class="r"><code>k_max &lt;- 15
+
+btwns &lt;- sapply(1:k_max, function(k) {
+  kmeans(image_df_trimmed, k)$betweenss
+})
+
+btwns</code></pre>
+<pre><code>##  [1] -3.961759e-09  1.163524e+04  1.506682e+04  1.757879e+04  1.891287e+04
+##  [6]  1.962234e+04  2.031805e+04  2.065455e+04  2.117845e+04  2.141058e+04
+## [11]  2.172826e+04  2.169153e+04  2.212581e+04  2.228658e+04  2.235183e+04</code></pre>
+<pre class="r"><code>plot(1:k_max, btwns,
+     type=&quot;b&quot;,
+     xlab=&quot;Количество кластеров&quot;,
+     ylab=&quot;Внутригрупповая однородность&quot;)</code></pre>
+<p><img src="/post/2020-05-31-retrowave.ru_files/figure-html/btwns-1.png" width="672" /></p>
+<p>В районе 6 кластеров однородность прирастает уже не сильно и на 6 можно останавливаться. Далее остаётся поработать только с цветами-центроидами.</p>
+</div>
+<div id="палитра" class="section level2">
+<h2>Палитра</h2>
+<pre class="r"><code>k_opt &lt;- 6
+
+cluster &lt;- kmeans(image_df_trimmed, k_opt)
+
+palette_df &lt;- data.frame(
+  x = apply(cluster$centers, 1, function(x) {
+    rgb(x[1], x[2], x[3])
+  }),
+  y = 100,
+  col = apply(cluster$centers, 1, function(x) {
+    rgb(x[1], x[2], x[3])
+  })
+)</code></pre>
+<p>Применив функцию <strong>kmeans</strong> на обработанный цветовой датафрейм, я получил много полезных данных. Но меня интересуют только координаты тех самых 6 центроидов, то есть самых усреднённых цветов предобработанной картинки. Они записаны в виде матрицы в результате выполнения функции. <strong>cluster$centers</strong>. Эти координаты я преобразую построчно в hexформат функцией rgb, добавлю dummy-переменную y для графика и ещё одну цветовую переменную для окрашивания колонок. Но для начала я хотел бы расположить цвета в порядке их взаимной удалённости. То есть цвет, который дальше других расположен от всех остальных цветов в палитре должен идти первым. Да у нас же классическая задача коммивояжёра! Сразу скажу, что так её решать не надо, тем более в R. Мне не хватило знаний и решить её иначе, но на 6 точках можно и таким способом сделать.</p>
+<pre class="r"><code>dot_distance &lt;- function(a, b) {
+  return(sqrt(sum((a - b) ^ 2)))
+}
+
+dist_matrix &lt;- function(cluster_centers, k, col_df) {
+  df &lt;- data.frame(
+    col = col_df$col
+  )
+  temp &lt;- list()
+  length(temp) &lt;- k
+  for (i in 1:k) {
+    temp[[i]] &lt;- apply(cluster_centers, 1, function(x) {
+      dot_distance(cluster_centers[i, ], x)
+    })
+  }
+  temp &lt;- do.call(rbind, temp)
+  colnames(temp) &lt;- df$col
+  df &lt;- cbind(df, temp)
+  return(df)
+}
+
+dist &lt;- dist_matrix(cluster$centers, k_opt, palette_df)
+
+knitr::kable(head(dist))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">col</th>
+<th align="right">#604286</th>
+<th align="right">#AA366B</th>
+<th align="right">#4D2349</th>
+<th align="right">#DAA3D1</th>
+<th align="right">#AF63B4</th>
+<th align="right">#E18757</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">#604286</td>
+<td align="right">0.0000000</td>
+<td align="right">0.3114735</td>
+<td align="right">0.2790042</td>
+<td align="right">0.6782761</td>
+<td align="right">0.3803901</td>
+<td align="right">0.6002356</td>
+</tr>
+<tr class="even">
+<td align="left">#AA366B</td>
+<td align="right">0.3114735</td>
+<td align="right">0.0000000</td>
+<td align="right">0.3957883</td>
+<td align="right">0.6165632</td>
+<td align="right">0.3373404</td>
+<td align="right">0.3899041</td>
+</tr>
+<tr class="odd">
+<td align="left">#4D2349</td>
+<td align="right">0.2790042</td>
+<td align="right">0.3957883</td>
+<td align="right">0.0000000</td>
+<td align="right">0.9191228</td>
+<td align="right">0.6225893</td>
+<td align="right">0.7010818</td>
+</tr>
+<tr class="even">
+<td align="left">#DAA3D1</td>
+<td align="right">0.6782761</td>
+<td align="right">0.6165632</td>
+<td align="right">0.9191228</td>
+<td align="right">0.0000000</td>
+<td align="right">0.3248299</td>
+<td align="right">0.4948480</td>
+</tr>
+<tr class="odd">
+<td align="left">#AF63B4</td>
+<td align="right">0.3803901</td>
+<td align="right">0.3373404</td>
+<td align="right">0.6225893</td>
+<td align="right">0.3248299</td>
+<td align="right">0.0000000</td>
+<td align="right">0.4389983</td>
+</tr>
+<tr class="even">
+<td align="left">#E18757</td>
+<td align="right">0.6002356</td>
+<td align="right">0.3899041</td>
+<td align="right">0.7010818</td>
+<td align="right">0.4948480</td>
+<td align="right">0.4389983</td>
+<td align="right">0.0000000</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>dist &lt;- dist %&gt;% 
+  pivot_longer(cols = -col, names_to = &quot;second_col&quot;, values_to = &quot;dist&quot;) %&gt;% 
+  arrange(-dist) %&gt;% select(col) %&gt;% distinct()
+
+dist &lt;- dist[, 1, drop = TRUE]
+
+palette_df$x &lt;- factor(palette_df$x, levels = dist, ordered = TRUE)
+palette_df &lt;- arrange(palette_df, desc(x))</code></pre>
+<p>По порядку, что сделано:</p>
+<p>Пишу короткую функцию расстояния между точками в n-мерном евклидовом пространстве.</p>
+<p>Далее использую её для функции, которая будет выводить матрицу расстояний между всеми возмоными точками (похожа на корелляционную матрицу). Применяю эту функцию на датафрейм-палитру.</p>
+<p>Далее “вытягиваю” получившийся датафрейм, чтобы получилось три столбца: цвет 1, цвет 2, расстояние между ними. Сортирую в порядке убывания расстояния и удаляю дубликаты. Колонку с цветом 1 превращаю в вектор, который буду использовать в качестве уровней упорядоченного фактора, в который превращу первую колонку (цветовую) в датафрейме-палитре.</p>
+<pre class="r"><code>ggplot(palette_df, aes(x = x, y = y, fill = col))+
+  geom_col()+
+  scale_fill_identity()+
+  coord_flip()+
+  theme(axis.title = element_blank(),
+        panel.background = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        plot.background = element_blank())</code></pre>
+<p><img src="/post/2020-05-31-retrowave.ru_files/figure-html/palette-1.png" width="672" /></p>
+</div>
+<div id="заключение-и-применение" class="section level2">
+<h2>Заключение и применение</h2>
+<p>Полученную палитру хочется сразу применить. И лучше всего это сделать на самых “модных” данных весны-лета 2020 - данных по распространению COVID-19. Заодно видно, как в tidyverse можно писать гигантские однострочники без необходимости создания промежуточных переменных.</p>
+<pre class="r"><code>coronavirus_df &lt;- read.csv(
+  &quot;https://raw.githubusercontent.com/RamiKrispin/coronavirus/master/csv/coronavirus.csv&quot;
+)
+
+coronavirus_df %&gt;% mutate(date = as.Date(date)) %&gt;% 
+  group_by(date, type, country) %&gt;% 
+  summarise(cases = sum(cases)) %&gt;% ungroup() %&gt;% 
+  group_by(type, country) %&gt;% mutate(cases = cumsum(cases)) %&gt;% 
+  ungroup() %&gt;% 
+  pivot_wider(names_from = type, values_from = cases) %&gt;% 
+  mutate(active = confirmed - death - recovered) %&gt;% 
+  pivot_longer(cols = confirmed:active, names_to = &quot;type&quot;, values_to = &quot;cases&quot;) %&gt;% 
+  group_by(date, type) %&gt;% mutate(total_cases = sum(cases)) %&gt;% ungroup() %&gt;% 
+  filter(country == &quot;Russia&quot;, date &gt;= as.Date(&quot;2020-03-01&quot;)) %&gt;% 
+  ggplot(aes(x = date, y = cases, fill = type))+
+  geom_area(alpha = 0.8)+
+  facet_wrap(. ~ type, ncol = 1, scales = &quot;free&quot;)+
+  scale_fill_manual(values = palette_df$col[1:4])+
+  theme_bw()+
+  labs(title = &quot;Данные по зарегистрированным случаям COVID-19 в РФ.&quot;,
+       caption = &quot;Источник - https://raw.githubusercontent.com/RamiKrispin/coronavirus/master/csv/coronavirus.csv&quot;,
+       x = &quot;Дата&quot;, y = &quot;Зарегистрировано случаев&quot;)+
+  scale_y_continuous(labels = scales::number_format())+
+  theme(strip.background = element_rect(fill = palette_df$col[5]),
+        strip.text = element_text(size = 10, colour = &quot;white&quot;),
+        legend.position = &quot;none&quot;,
+        plot.background = element_blank())</code></pre>
+<p><img src="/post/2020-05-31-retrowave.ru_files/figure-html/final-1.png" width="672" /></p>
+</div>
+</div>
