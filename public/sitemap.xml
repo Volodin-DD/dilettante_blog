@@ -3,66 +3,58 @@
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   
   <url>
-    <loc>/categories/</loc>
+    <loc>https://dilettante-blog.netlify.app/categories/</loc>
     <lastmod>2020-05-31T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>/tags/kmeans/</loc>
+    <loc>https://dilettante-blog.netlify.app/tags/kmeans/</loc>
     <lastmod>2020-05-31T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>/tags/ml/</loc>
+    <loc>https://dilettante-blog.netlify.app/tags/ml/</loc>
     <lastmod>2020-05-31T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>/post/</loc>
+    <loc>https://dilettante-blog.netlify.app/post/</loc>
     <lastmod>2020-05-31T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>/categories/r/</loc>
+    <loc>https://dilettante-blog.netlify.app/categories/r/</loc>
     <lastmod>2020-05-31T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>/tags/retrowave/</loc>
+    <loc>https://dilettante-blog.netlify.app/tags/retrowave/</loc>
     <lastmod>2020-05-31T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>/tags/</loc>
+    <loc>https://dilettante-blog.netlify.app/tags/</loc>
     <lastmod>2020-05-31T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>/categories/visualization/</loc>
+    <loc>https://dilettante-blog.netlify.app/categories/visualization/</loc>
     <lastmod>2020-05-31T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>/</loc>
+    <loc>https://dilettante-blog.netlify.app/</loc>
     <lastmod>2020-05-31T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>/about/</loc>
+    <loc>https://dilettante-blog.netlify.app/about/</loc>
     <lastmod>2020-05-31T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>/post/retrowave/</loc>
+    <loc>https://dilettante-blog.netlify.app/post/retrowave/</loc>
     <lastmod>2020-05-31T00:00:00+00:00</lastmod>
-  </url>
-  
-  <url>
-    <loc>/gallery/</loc>
-  </url>
-  
-  <url>
-    <loc>/portfolio/</loc>
   </url>
   
 </urlset>
